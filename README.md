@@ -6,6 +6,9 @@
 [![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Vitest](https://img.shields.io/badge/tested_with-Vitest-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
+[![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?logo=vercel&logoColor=white)](https://geo-location-resolver.vercel.app/)
+
+**[Try it live →](https://geo-location-resolver.vercel.app/)**
 
 A React + TypeScript app that resolves a visitor's country, region, and city entirely client-side, with a layered fallback chain so it still returns a result when the browser can't give one:
 
