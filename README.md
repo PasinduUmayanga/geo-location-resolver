@@ -1,6 +1,6 @@
 # geo-location-resolver
 
-[![Build status](https://ci.appveyor.com/api/projects/status/github/PasinduUmayanga/geo-location-resolver?svg=true&branch=create-a-react-vite)](https://ci.appveyor.com/project/PasinduUmayanga/geo-location-resolver)
+[![Build status](https://ci.appveyor.com/api/projects/status/github/Mahadenamuththa/geo-location-resolver?svg=true&branch=create-a-react-vite)](https://ci.appveyor.com/project/Mahadenamuththa/geo-location-resolver)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
@@ -29,14 +29,14 @@ Open the printed local URL and click **Get Location** — your browser will prom
 
 ## Scripts
 
-| Script             | What it does                                           |
-| ------------------ | ------------------------------------------------------- |
-| `npm run dev`       | Starts the Vite dev server                             |
-| `npm run build`     | Type-checks (`tsc -b`) then builds a production bundle |
-| `npm run preview`   | Serves the production build locally                     |
-| `npm run typecheck` | Runs the TypeScript compiler in check-only mode         |
-| `npm test`          | Runs the Vitest suite once (CI mode)                     |
-| `npm run test:watch`| Runs Vitest in watch mode                                |
+| Script               | What it does                                           |
+| -------------------- | ------------------------------------------------------ |
+| `npm run dev`        | Starts the Vite dev server                             |
+| `npm run build`      | Type-checks (`tsc -b`) then builds a production bundle |
+| `npm run preview`    | Serves the production build locally                    |
+| `npm run typecheck`  | Runs the TypeScript compiler in check-only mode        |
+| `npm test`           | Runs the Vitest suite once (CI mode)                   |
+| `npm run test:watch` | Runs Vitest in watch mode                              |
 
 ## Project structure
 
