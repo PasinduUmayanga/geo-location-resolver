@@ -1,6 +1,6 @@
 # geo-location-resolver
 
-[![Build status](https://ci.appveyor.com/api/projects/status/github/Mahadenamuththa/geo-location-resolver?svg=true&branch=create-a-react-vite)](https://ci.appveyor.com/project/Mahadenamuththa/geo-location-resolver)
+[![Build status](https://ci.appveyor.com/api/projects/status/wkdfe2guesq2l5jq?svg=true)](https://ci.appveyor.com/project/Mahadenamuththa/geo-location-resolver)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
