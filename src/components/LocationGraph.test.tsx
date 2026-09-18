@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 import LocationGraph from "./LocationGraph.tsx";
 import type { LocationStep, NormalizedLocation } from "../types/location.ts";
@@ -26,18 +26,20 @@ describe("LocationGraph", () => {
     };
 
     render(<LocationGraph status="success" steps={steps} result={result} />);
+    const desktop = within(screen.getByTestId("detection-tree"));
 
-    expect(screen.getByText(/Location ON \+ permission ALLOWED/)).toHaveClass(
+    expect(desktop.getByText(/Location ON \+ permission ALLOWED/)).toHaveClass(
       "font-medium"
     );
     expect(
-      screen.getByText(/Permission denied \(or OS location off/)
+      desktop.getByText(/Permission denied \(or OS location off/)
     ).not.toHaveClass("font-medium");
-    expect(screen.getByText("Result: Browser Location (precise)")).toBeInTheDocument();
+    // The result and caveats render in both the mobile stepper and the desktop tree.
+    expect(screen.getAllByText("Result: Browser Location (precise)")).toHaveLength(2);
     expect(
-      screen.getByText(/Mobile ISP location can be especially inaccurate/)
-    ).toBeInTheDocument();
-    expect(screen.getByText(/VPNs\/proxies can skew/)).toBeInTheDocument();
+      screen.getAllByText(/Mobile ISP location can be especially inaccurate/)
+    ).toHaveLength(2);
+    expect(screen.getAllByText(/VPNs\/proxies can skew/)).toHaveLength(2);
   });
 
   it("highlights the permission-denied edge and falls back to IP", () => {
@@ -49,14 +51,15 @@ describe("LocationGraph", () => {
     const result: NormalizedLocation = { country: "United States", source: "ip", hints: {} };
 
     render(<LocationGraph status="success" steps={steps} result={result} />);
+    const desktop = within(screen.getByTestId("detection-tree"));
 
-    expect(screen.getByText(/Permission denied \(or OS location off/)).toHaveClass(
+    expect(desktop.getByText(/Permission denied \(or OS location off/)).toHaveClass(
       "font-medium"
     );
-    expect(screen.getByText(/Location ON \+ permission ALLOWED/)).not.toHaveClass(
+    expect(desktop.getByText(/Location ON \+ permission ALLOWED/)).not.toHaveClass(
       "font-medium"
     );
-    expect(screen.getByText("Result: IP Location (approximate)")).toBeInTheDocument();
+    expect(screen.getAllByText("Result: IP Location (approximate)")).toHaveLength(2);
   });
 
   it("highlights the position-unavailable edge distinctly from permission-denied", () => {
@@ -68,11 +71,12 @@ describe("LocationGraph", () => {
     const result: NormalizedLocation = { country: "United States", source: "ip", hints: {} };
 
     render(<LocationGraph status="success" steps={steps} result={result} />);
+    const desktop = within(screen.getByTestId("detection-tree"));
 
     expect(
-      screen.getByText(/Position unavailable \/ OS location off/)
+      desktop.getByText(/Position unavailable \/ OS location off/)
     ).toHaveClass("font-medium");
-    expect(screen.getByText(/Permission denied \(or OS location off/)).not.toHaveClass(
+    expect(desktop.getByText(/Permission denied \(or OS location off/)).not.toHaveClass(
       "font-medium"
     );
   });
@@ -86,6 +90,44 @@ describe("LocationGraph", () => {
 
     render(<LocationGraph status="error" steps={steps} result={null} />);
 
-    expect(screen.getByText("Result: All methods failed")).toBeInTheDocument();
+    expect(screen.getAllByText("Result: All methods failed")).toHaveLength(2);
+  });
+
+  describe("mobile/tablet viewport support", () => {
+    // Tailwind's `xl` breakpoint (1280px) is the cutover — roughly where the
+    // horizontal tree's own minimum width actually fits without scrolling.
+    // Everything below it (phones like a Xiaomi 15 Ultra at ~450-460px CSS
+    // width, tablets, most laptop windows) gets the vertical stepper instead.
+    const steps: LocationStep[] = [
+      step({ id: "browser-geolocation", status: "failed", reason: "permission-denied" }),
+      step({ id: "reverse-geocode", status: "skipped" }),
+      step({ id: "ip-geolocation", status: "success" }),
+    ];
+    const result: NormalizedLocation = { country: "United States", source: "ip", hints: {} };
+
+    it("renders a vertical stepper hidden at xl+ and a horizontal tree hidden below xl", () => {
+      render(<LocationGraph status="success" steps={steps} result={result} />);
+
+      const mobile = screen.getByTestId("detection-tree-mobile");
+      const desktop = screen.getByTestId("detection-tree");
+
+      expect(mobile).toHaveClass("xl:hidden");
+      expect(desktop).toHaveClass("hidden");
+      expect(desktop).toHaveClass("xl:block");
+    });
+
+    it("shows the same step statuses and IP caveats in the mobile stepper as the desktop tree", () => {
+      render(<LocationGraph status="success" steps={steps} result={result} />);
+      const mobile = within(screen.getByTestId("detection-tree-mobile"));
+
+      expect(mobile.getByText("Browser Geolocation")).toBeInTheDocument();
+      expect(mobile.getAllByText("Failed")).toHaveLength(1);
+      expect(mobile.getByText("IP Geolocation Fallback")).toBeInTheDocument();
+      expect(
+        mobile.getByText(/Mobile ISP location can be especially inaccurate/)
+      ).toBeInTheDocument();
+      expect(mobile.getByText(/VPNs\/proxies can skew/)).toBeInTheDocument();
+      expect(mobile.getByText("Result: IP Location (approximate)")).toBeInTheDocument();
+    });
   });
 });
