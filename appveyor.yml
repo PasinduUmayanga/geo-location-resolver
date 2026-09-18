@@ -20,3 +20,5 @@ test_script:
   - npm run typecheck
   - npm test
   - npm run build
+  - npm outdated || true
+  - npm audit --audit-level=critical

@@ -78,4 +78,4 @@ The core logic lives in `src/components/LocationInfo.tsx`.
 
 ## Continuous integration
 
-`appveyor.yml` runs on every push/PR: it installs dependencies with `npm ci` (caching `node_modules` keyed on `package-lock.json`), then runs `npm run typecheck`, `npm test`, and `npm run build` in sequence — a broken type, a failing test, or a broken production build all fail the CI run.
+`appveyor.yml` runs on every push/PR: it installs dependencies with `npm ci` (caching `node_modules` keyed on `package-lock.json`), then runs `npm run typecheck`, `npm test`, and `npm run build` in sequence — a broken type, a failing test, or a broken production build all fail the CI run. It then reports outdated packages (`npm outdated`, non-blocking) and audits for known vulnerabilities (`npm audit`, printing every severity but only failing the build on a critical-severity finding).
