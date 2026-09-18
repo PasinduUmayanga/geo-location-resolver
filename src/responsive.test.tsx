@@ -94,13 +94,23 @@ describe("responsive layout", () => {
     expect(grid).toHaveClass("lg:grid-cols-3");
   });
 
-  it("keeps the detection tree horizontally scrollable so it isn't clipped on narrow viewports", async () => {
+  it("keeps the desktop detection tree horizontally scrollable as a tablet-and-up fallback", async () => {
     await resolveToSuccess();
     const tree = screen.getByTestId("detection-tree");
     const row = screen.getByTestId("detection-tree-row");
 
     expect(tree).toHaveClass("overflow-x-auto");
     expect(row).toHaveClass("min-w-[1000px]");
+  });
+
+  it("swaps to a vertical stepper below xl (1280px, the tree's own minimum fit width) so phones — e.g. a Xiaomi 15 Ultra at ~450-460px CSS width — and tablets get a non-scrolling layout", async () => {
+    await resolveToSuccess();
+    const mobileTree = screen.getByTestId("detection-tree-mobile");
+    const desktopTree = screen.getByTestId("detection-tree");
+
+    expect(mobileTree).toHaveClass("xl:hidden");
+    expect(desktopTree).toHaveClass("hidden");
+    expect(desktopTree).toHaveClass("xl:block");
   });
 
   it("scales the embedded map taller on tablet/desktop breakpoints", async () => {

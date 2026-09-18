@@ -99,9 +99,11 @@ describe("LocationInfo", () => {
       expect(screen.getByText("San Francisco")).toBeInTheDocument()
     );
     expect(screen.getByText("browser")).toBeInTheDocument();
-    // Start, Browser Geolocation, Reverse Geocode, and the final Result node all show "Success".
-    expect(screen.getAllByText("Success")).toHaveLength(4);
-    expect(screen.getByText("Skipped")).toBeInTheDocument();
+    // Start, Browser Geolocation, Reverse Geocode, and the final Result node all show
+    // "Success", once in the mobile stepper and once in the desktop tree (both render,
+    // toggled by CSS breakpoint classes, not conditionally mounted).
+    expect(screen.getAllByText("Success")).toHaveLength(8);
+    expect(screen.getAllByText("Skipped")).toHaveLength(2);
     expect(
       screen.queryByText(/approximate location/i)
     ).not.toBeInTheDocument();

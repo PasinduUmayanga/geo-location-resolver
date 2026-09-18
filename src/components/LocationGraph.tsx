@@ -81,12 +81,13 @@ interface GraphNodeProps {
   status: NodeStatus;
   detail?: string;
   children?: React.ReactNode;
+  fullWidth?: boolean;
 }
 
-function GraphNode({ title, status, detail, children }: GraphNodeProps) {
+function GraphNode({ title, status, detail, children, fullWidth }: GraphNodeProps) {
   return (
     <div
-      className={`w-52 shrink-0 rounded-lg border bg-white px-3 py-2 text-sm transition-colors duration-300 ${NODE_BORDER_CLASSES[status]} ${status === "active" ? "animate-pulse" : ""}`}
+      className={`${fullWidth ? "w-full" : "w-52 shrink-0"} rounded-lg border bg-white px-3 py-2 text-sm transition-colors duration-300 ${NODE_BORDER_CLASSES[status]} ${status === "active" ? "animate-pulse" : ""}`}
     >
       <div className="flex flex-wrap items-center justify-between gap-1">
         <span className="font-medium text-slate-700">{title}</span>
@@ -110,6 +111,14 @@ function Arrow() {
     >
       →
     </span>
+  );
+}
+
+function DownConnector() {
+  return (
+    <div aria-hidden="true" className="flex justify-center text-slate-300">
+      ↓
+    </div>
   );
 }
 
@@ -152,76 +161,120 @@ export default function LocationGraph({ status, steps, result }: LocationGraphPr
   const successEdge = BROWSER_EDGES[0];
 
   return (
-    <div
-      aria-live="polite"
-      data-testid="detection-tree"
-      className="mt-4 overflow-x-auto"
-    >
+    <>
+      {/* Below Tailwind's xl / 1280px breakpoint — the horizontal tree's actual
+          minimum content width (min-w-[1000px] plus padding) — there isn't
+          "enough" room to show it without internal scrolling, so every phone,
+          tablet, and most laptop windows (e.g. a Xiaomi 15 Ultra at ~450-460px,
+          an iPad at 768-1024px, a 1366px laptop) get this vertical stepper instead. */}
       <div
-        data-testid="detection-tree-row"
-        className="flex min-w-[1000px] items-stretch gap-3 pb-2"
+        aria-live="polite"
+        data-testid="detection-tree-mobile"
+        className="mt-4 space-y-2 xl:hidden"
       >
-        <div className="flex items-center">
-          <GraphNode title="Start" status="success" />
-        </div>
-        <Arrow />
-        <div className="flex items-center">
-          <GraphNode
-            title="Browser Geolocation"
-            status={browserStatus}
-            detail={browserStep?.detail}
-          />
-        </div>
-        <Arrow />
+        <GraphNode title="Start" status="success" fullWidth />
+        <DownConnector />
+        <GraphNode
+          title="Browser Geolocation"
+          status={browserStatus}
+          detail={browserStep?.detail}
+          fullWidth
+        />
+        <DownConnector />
+        <GraphNode
+          title="Reverse Geocode"
+          status={reverseStatus}
+          detail={reverseStep?.detail}
+          fullWidth
+        />
+        <DownConnector />
+        <GraphNode
+          title="IP Geolocation Fallback"
+          status={ipStatus}
+          detail={ipStep?.detail}
+          fullWidth
+        >
+          <ul className="mt-2 space-y-0.5 text-xs text-amber-600">
+            <li>⚠ Mobile ISP location can be especially inaccurate.</li>
+            <li>⚠ VPNs/proxies can skew IP-based location.</li>
+          </ul>
+        </GraphNode>
+        <DownConnector />
+        <GraphNode title={resultNode.title} status={resultNode.status} fullWidth />
+      </div>
 
-        <div className="flex flex-col justify-center gap-2">
-          <div className="flex items-center gap-2">
-            <span className={`w-72 text-xs ${EDGE_TEXT_CLASSES[takenEdgeKey === successEdge.key ? reverseStatus : "pending"]}`}>
-              {takenEdgeKey === successEdge.key ? "▶" : "┄"} {successEdge.label}
-            </span>
-            <Arrow />
+      {/* xl and up: enough width for the full horizontal branching tree to fit without scrolling. */}
+      <div
+        aria-live="polite"
+        data-testid="detection-tree"
+        className="hidden overflow-x-auto xl:mt-4 xl:block"
+      >
+        <div
+          data-testid="detection-tree-row"
+          className="flex min-w-[1000px] items-stretch gap-3 pb-2"
+        >
+          <div className="flex items-center">
+            <GraphNode title="Start" status="success" />
+          </div>
+          <Arrow />
+          <div className="flex items-center">
             <GraphNode
-              title="Reverse Geocode"
-              status={reverseStatus}
-              detail={reverseStep?.detail}
+              title="Browser Geolocation"
+              status={browserStatus}
+              detail={browserStep?.detail}
             />
           </div>
+          <Arrow />
 
-          <ol className="ml-1 space-y-1 border-l-2 border-slate-200 pl-2">
-            {failureEdges.map((edge) => {
-              const isTaken = takenEdgeKey === edge.key;
-              return (
-                <li
-                  key={edge.key}
-                  className={`w-72 text-xs ${EDGE_TEXT_CLASSES[isTaken ? ipStatus : "pending"]}`}
-                >
-                  {isTaken ? "▶" : "┄"} {edge.label}
-                </li>
-              );
-            })}
-          </ol>
+          <div className="flex flex-col justify-center gap-2">
+            <div className="flex items-center gap-2">
+              <span className={`w-72 text-xs ${EDGE_TEXT_CLASSES[takenEdgeKey === successEdge.key ? reverseStatus : "pending"]}`}>
+                {takenEdgeKey === successEdge.key ? "▶" : "┄"} {successEdge.label}
+              </span>
+              <Arrow />
+              <GraphNode
+                title="Reverse Geocode"
+                status={reverseStatus}
+                detail={reverseStep?.detail}
+              />
+            </div>
 
-          <div className="flex items-center gap-2">
-            <span
-              className={`w-72 text-xs ${EDGE_TEXT_CLASSES[reverseStep?.status === "failed" ? ipStatus : "pending"]}`}
-            >
-              {reverseStep?.status === "failed" ? "▶" : "┄"} Reverse Geocode failed
-            </span>
-            <Arrow />
-            <GraphNode title="IP Geolocation Fallback" status={ipStatus} detail={ipStep?.detail}>
-              <ul className="mt-2 space-y-0.5 text-xs text-amber-600">
-                <li>⚠ Mobile ISP location can be especially inaccurate.</li>
-                <li>⚠ VPNs/proxies can skew IP-based location.</li>
-              </ul>
-            </GraphNode>
+            <ol className="ml-1 space-y-1 border-l-2 border-slate-200 pl-2">
+              {failureEdges.map((edge) => {
+                const isTaken = takenEdgeKey === edge.key;
+                return (
+                  <li
+                    key={edge.key}
+                    className={`w-72 text-xs ${EDGE_TEXT_CLASSES[isTaken ? ipStatus : "pending"]}`}
+                  >
+                    {isTaken ? "▶" : "┄"} {edge.label}
+                  </li>
+                );
+              })}
+            </ol>
+
+            <div className="flex items-center gap-2">
+              <span
+                className={`w-72 text-xs ${EDGE_TEXT_CLASSES[reverseStep?.status === "failed" ? ipStatus : "pending"]}`}
+              >
+                {reverseStep?.status === "failed" ? "▶" : "┄"} Reverse Geocode failed
+              </span>
+              <Arrow />
+              <GraphNode title="IP Geolocation Fallback" status={ipStatus} detail={ipStep?.detail}>
+                <ul className="mt-2 space-y-0.5 text-xs text-amber-600">
+                  <li>⚠ Mobile ISP location can be especially inaccurate.</li>
+                  <li>⚠ VPNs/proxies can skew IP-based location.</li>
+                </ul>
+              </GraphNode>
+            </div>
+          </div>
+
+          <Arrow />
+          <div className="flex items-center">
+            <GraphNode title={resultNode.title} status={resultNode.status} />
           </div>
         </div>
-
-        <Arrow />
-        <div className="flex items-center">
-          <GraphNode title={resultNode.title} status={resultNode.status} />
-        </div>
       </div>
-    </div>
+    </>
   );
 }
