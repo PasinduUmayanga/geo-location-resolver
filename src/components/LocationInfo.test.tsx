@@ -15,7 +15,9 @@ function mockGeolocation({
       errorCallback?: PositionErrorCallback | null
     ) => {
       if (success) {
-        successCallback({ coords: mockCoords } as unknown as GeolocationPosition);
+        successCallback({
+          coords: { ...mockCoords, accuracy: 25 },
+        } as unknown as GeolocationPosition);
       } else {
         errorCallback?.({ code: errorCode } as unknown as GeolocationPositionError);
       }
@@ -25,7 +27,46 @@ function mockGeolocation({
     value: { getCurrentPosition },
     configurable: true,
   });
-  return getCurrentPosition;
+}
+
+function mockFetchRouting({
+  reverseGeocodeOk = true,
+  ipGeolocationOk = true,
+}: { reverseGeocodeOk?: boolean; ipGeolocationOk?: boolean } = {}) {
+  globalThis.fetch = vi.fn((input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString();
+
+    if (url.includes("bigdatacloud")) {
+      return reverseGeocodeOk
+        ? Promise.resolve({
+            ok: true,
+            json: async () => ({
+              countryName: "United States",
+              principalSubdivision: "California",
+              city: "San Francisco",
+            }),
+          })
+        : Promise.resolve({ ok: false, status: 500 });
+    }
+
+    if (url.includes("ipapi.co")) {
+      return ipGeolocationOk
+        ? Promise.resolve({
+            ok: true,
+            json: async () => ({
+              country_name: "United States",
+              region: "New York",
+              city: "New York",
+              latitude: 40.7128,
+              longitude: -74.006,
+              org: "Example ISP",
+            }),
+          })
+        : Promise.resolve({ ok: false, status: 503 });
+    }
+
+    return Promise.reject(new Error(`Unexpected fetch to ${url}`));
+  }) as unknown as typeof fetch;
 }
 
 describe("LocationInfo", () => {
@@ -38,112 +79,52 @@ describe("LocationInfo", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the Get Location button initially with no result", () => {
+  it("renders the Get Location button initially with no steps shown", () => {
     render(<LocationInfo />);
     expect(
       screen.getByRole("button", { name: /get location/i })
     ).toBeInTheDocument();
-    expect(screen.queryByText(/country/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("Browser Geolocation")).not.toBeInTheDocument();
   });
 
-  it("shows an unsupported message when geolocation is not available", () => {
-    render(<LocationInfo />);
-    expect(screen.getByText(/not supported/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /get location/i })).toBeDisabled();
-  });
-
-  it("shows a loading state while the request is in flight", async () => {
+  it("resolves via the browser and skips the IP fallback on full success", async () => {
     mockGeolocation({ success: true });
-    let resolveFetch: (value: unknown) => void = () => {};
-    globalThis.fetch = vi.fn(
-      () =>
-        new Promise((resolve) => {
-          resolveFetch = resolve;
-        })
-    ) as unknown as typeof fetch;
-
-    const user = userEvent.setup();
-    render(<LocationInfo />);
-    await user.click(screen.getByRole("button", { name: /get location/i }));
-
-    expect(screen.getByRole("button", { name: /locating/i })).toBeDisabled();
-
-    resolveFetch({
-      ok: true,
-      json: async () => ({
-        countryName: "United States",
-        principalSubdivision: "California",
-        city: "San Francisco",
-      }),
-    });
-
-    await waitFor(() =>
-      expect(screen.getByText("United States")).toBeInTheDocument()
-    );
-  });
-
-  it("displays resolved location details on success", async () => {
-    mockGeolocation({ success: true });
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        countryName: "United States",
-        principalSubdivision: "California",
-        city: "San Francisco",
-      }),
-    }) as unknown as typeof fetch;
+    mockFetchRouting({ reverseGeocodeOk: true });
 
     const user = userEvent.setup();
     render(<LocationInfo />);
     await user.click(screen.getByRole("button", { name: /get location/i }));
 
     await waitFor(() =>
-      expect(screen.getByText("United States")).toBeInTheDocument()
+      expect(screen.getByText("San Francisco")).toBeInTheDocument()
     );
-    expect(screen.getByText("California")).toBeInTheDocument();
-    expect(screen.getByText("San Francisco")).toBeInTheDocument();
-    expect(screen.getByText(mockCoords.latitude.toFixed(6))).toBeInTheDocument();
-    expect(screen.getByText(mockCoords.longitude.toFixed(6))).toBeInTheDocument();
+    expect(screen.getByText("browser")).toBeInTheDocument();
+    expect(screen.getAllByText("Success")).toHaveLength(2);
+    expect(screen.getByText("Skipped")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/approximate location/i)
+    ).not.toBeInTheDocument();
   });
 
-  it("falls back to locality when city is missing", async () => {
-    mockGeolocation({ success: true });
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        countryName: "United States",
-        principalSubdivision: "California",
-        locality: "Bernal Heights",
-      }),
-    }) as unknown as typeof fetch;
-
-    const user = userEvent.setup();
-    render(<LocationInfo />);
-    await user.click(screen.getByRole("button", { name: /get location/i }));
-
-    await waitFor(() =>
-      expect(screen.getByText("Bernal Heights")).toBeInTheDocument()
-    );
-  });
-
-  it("shows a permission-denied message when geolocation errors", async () => {
+  it("falls back to IP geolocation when the browser permission is denied", async () => {
     mockGeolocation({ success: false, errorCode: 1 });
+    mockFetchRouting({ ipGeolocationOk: true });
 
     const user = userEvent.setup();
     render(<LocationInfo />);
     await user.click(screen.getByRole("button", { name: /get location/i }));
 
     await waitFor(() =>
-      expect(screen.getByText(/location access was denied/i)).toBeInTheDocument()
+      expect(screen.getAllByText("New York").length).toBeGreaterThan(0)
     );
+    expect(screen.getByText("ip")).toBeInTheDocument();
+    expect(screen.getByText(/approximate location/i)).toBeInTheDocument();
+    expect(screen.getByText("Example ISP")).toBeInTheDocument();
   });
 
-  it("shows a generic error message when the reverse-geocode request fails", async () => {
-    mockGeolocation({ success: true });
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 500,
-    }) as unknown as typeof fetch;
+  it("shows a failure message when every method fails", async () => {
+    mockGeolocation({ success: false, errorCode: 2 });
+    mockFetchRouting({ ipGeolocationOk: false });
 
     const user = userEvent.setup();
     render(<LocationInfo />);
@@ -151,7 +132,7 @@ describe("LocationInfo", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText(/couldn't resolve them to an address/i)
+        screen.getByText(/all location detection methods failed/i)
       ).toBeInTheDocument()
     );
   });
