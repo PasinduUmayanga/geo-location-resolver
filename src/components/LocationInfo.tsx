@@ -1,5 +1,6 @@
 import { useLocationResolver } from "../hooks/useLocationResolver.ts";
-import LocationSteps from "./LocationSteps.tsx";
+import LocationGraph from "./LocationGraph.tsx";
+import LocationMap from "./LocationMap.tsx";
 
 export default function LocationInfo() {
   const { status, steps, result, error, run } = useLocationResolver();
@@ -7,7 +8,10 @@ export default function LocationInfo() {
   const isRunning = status === "running";
 
   return (
-    <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div
+      data-testid="location-card"
+      className="w-full rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6"
+    >
       <button
         onClick={run}
         disabled={isRunning}
@@ -16,14 +20,19 @@ export default function LocationInfo() {
         {isRunning ? "Locating…" : "Get Location"}
       </button>
 
-      {status !== "idle" && <LocationSteps steps={steps} />}
+      {status !== "idle" && (
+        <LocationGraph status={status} steps={steps} result={result} />
+      )}
 
       {status === "error" && error && (
         <p className="mt-4 text-sm text-red-600">{error}</p>
       )}
 
       {status === "success" && result && (
-        <div className="mt-4">
+        <div className="mt-4 rounded-lg border border-slate-200 p-3">
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Result
+          </h2>
           {result.source === "ip" && (
             <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
               Approximate location — based on IP address, may be affected by
@@ -31,7 +40,10 @@ export default function LocationInfo() {
             </p>
           )}
 
-          <dl className="space-y-2 text-sm text-slate-700">
+          <dl
+            data-testid="result-grid"
+            className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm text-slate-700 sm:grid-cols-2 lg:grid-cols-3"
+          >
             <div className="flex justify-between border-b border-slate-100 pb-1">
               <dt className="font-medium text-slate-500">Country</dt>
               <dd>{result.country || "Unknown"}</dd>
@@ -79,6 +91,10 @@ export default function LocationInfo() {
               <dd className="capitalize">{result.source}</dd>
             </div>
           </dl>
+
+          {result.latitude !== undefined && result.longitude !== undefined && (
+            <LocationMap latitude={result.latitude} longitude={result.longitude} />
+          )}
         </div>
       )}
     </div>

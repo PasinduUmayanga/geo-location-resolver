@@ -99,11 +99,15 @@ describe("LocationInfo", () => {
       expect(screen.getByText("San Francisco")).toBeInTheDocument()
     );
     expect(screen.getByText("browser")).toBeInTheDocument();
-    expect(screen.getAllByText("Success")).toHaveLength(2);
+    // Start, Browser Geolocation, Reverse Geocode, and the final Result node all show "Success".
+    expect(screen.getAllByText("Success")).toHaveLength(4);
     expect(screen.getByText("Skipped")).toBeInTheDocument();
     expect(
       screen.queryByText(/approximate location/i)
     ).not.toBeInTheDocument();
+    expect(
+      screen.getByTitle("Map showing the resolved location")
+    ).toBeInTheDocument();
   });
 
   it("falls back to IP geolocation when the browser permission is denied", async () => {
@@ -120,6 +124,9 @@ describe("LocationInfo", () => {
     expect(screen.getByText("ip")).toBeInTheDocument();
     expect(screen.getByText(/approximate location/i)).toBeInTheDocument();
     expect(screen.getByText("Example ISP")).toBeInTheDocument();
+    expect(
+      screen.getByTitle("Map showing the resolved location")
+    ).toBeInTheDocument();
   });
 
   it("shows a failure message when every method fails", async () => {

@@ -1,14 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { LocationStep } from "../../types/location.ts";
 
-vi.mock("./browserGeolocation.ts");
+vi.mock("./browserGeolocation.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./browserGeolocation.ts")>();
+  return { ...actual, getBrowserCoordinates: vi.fn() };
+});
 vi.mock("./reverseGeocode.ts");
 vi.mock("./ipGeolocation.ts");
 vi.mock("./hints.ts", () => ({
   collectHints: () => ({ timezone: "UTC", locale: "en-US" }),
 }));
 
-import { getBrowserCoordinates } from "./browserGeolocation.ts";
+import { GeolocationError, getBrowserCoordinates } from "./browserGeolocation.ts";
 import { reverseGeocode } from "./reverseGeocode.ts";
 import { getIpGeolocation } from "./ipGeolocation.ts";
 import { LocationResolutionError, resolveLocation } from "./resolveLocation.ts";
@@ -78,8 +81,10 @@ describe("resolveLocation", () => {
     expect(statusOf(finalSteps, "ip-geolocation")).toBe("success");
   });
 
-  it("falls back to IP geolocation when browser geolocation fails, skipping reverse geocode", async () => {
-    vi.mocked(getBrowserCoordinates).mockRejectedValue(new Error("permission denied"));
+  it("falls back to IP geolocation when browser geolocation fails, skipping reverse geocode, and records the failure reason", async () => {
+    vi.mocked(getBrowserCoordinates).mockRejectedValue(
+      new GeolocationError("Location access was denied.", "permission-denied")
+    );
     vi.mocked(getIpGeolocation).mockResolvedValue({
       country: "United States",
       region: "New York",
@@ -94,8 +99,26 @@ describe("resolveLocation", () => {
 
     const finalSteps = steps[steps.length - 1];
     expect(statusOf(finalSteps, "browser-geolocation")).toBe("failed");
+    expect(
+      finalSteps.find((s) => s.id === "browser-geolocation")?.reason
+    ).toBe("permission-denied");
     expect(statusOf(finalSteps, "reverse-geocode")).toBe("skipped");
     expect(statusOf(finalSteps, "ip-geolocation")).toBe("success");
+  });
+
+  it("records the position-unavailable reason distinctly from permission-denied", async () => {
+    vi.mocked(getBrowserCoordinates).mockRejectedValue(
+      new GeolocationError("Position could not be determined.", "position-unavailable")
+    );
+    vi.mocked(getIpGeolocation).mockResolvedValue({ country: "United States" });
+
+    const steps: LocationStep[][] = [];
+    await resolveLocation((s) => steps.push(s));
+
+    const finalSteps = steps[steps.length - 1];
+    expect(
+      finalSteps.find((s) => s.id === "browser-geolocation")?.reason
+    ).toBe("position-unavailable");
   });
 
   it("throws a LocationResolutionError with the full step trail when every method fails", async () => {

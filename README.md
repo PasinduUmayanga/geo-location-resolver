@@ -63,8 +63,9 @@ src/
   hooks/
     useLocationResolver.ts         # React hook wrapping resolveLocation for LocationInfo
   components/
-    LocationInfo.tsx               # button + step tracker + result card
-    LocationSteps.tsx              # renders the ordered step list with status badges
+    LocationInfo.tsx               # button + graph view + result card + map
+    LocationGraph.tsx              # node/edge graph view of the fallback chain
+    LocationMap.tsx                # embedded OpenStreetMap view of the result
   App.test.tsx                     # smoke test for App
   test/setup.ts                    # jest-dom matchers for Vitest
 appveyor.yml                       # CI: typecheck -> test -> build -> outdated/audit report
@@ -85,12 +86,33 @@ Browser Geolocation ──success──▶ Reverse Geocode ──success──�
                      all failed ▶ throws LocationResolutionError
 ```
 
-- **`browserGeolocation.ts`** wraps `navigator.geolocation.getCurrentPosition` as a Promise and maps [`GeolocationPositionError.code`](https://developer.mozilla.org/en-US/docs/Web/API/GeolocationPositionError/code) (`1` permission denied, `2` position unavailable, `3` timeout) to readable messages.
+- **`browserGeolocation.ts`** wraps `navigator.geolocation.getCurrentPosition` as a Promise and throws a typed `GeolocationError` with a `reason` (`permission-denied`, `position-unavailable`, `timeout`, `unsupported`) mapped from [`GeolocationPositionError.code`](https://developer.mozilla.org/en-US/docs/Web/API/GeolocationPositionError/code) (`1`/`2`/`3`) — not just a message string, so the UI can branch on *why* it failed, not just *that* it failed.
 - **`reverseGeocode.ts`** sends browser coordinates to BigDataCloud's `reverse-geocode-client` endpoint (`city: data.city || data.locality`, since BigDataCloud omits `city` for some rural/unincorporated coordinates). If browser geolocation succeeds but this fails, the chain still falls through to IP geolocation — raw coordinates without a resolved address aren't treated as a full success.
 - **`ipGeolocation.ts`** calls `ipapi.co`, which detects the caller's IP from the request itself — no backend needed. It also handles ipapi.co's quirk of returning HTTP 200 with `{ error: true }` when rate-limited, rather than a non-2xx status.
 - **`hints.ts`** collects timezone (`Intl.DateTimeFormat().resolvedOptions().timeZone`) and locale (`navigator.language`) once, merged into whichever result wins — these never gate the chain or get a step of their own, since they're supporting metadata, not a location source.
-- **"Stop at first success."** The moment browser geolocation + reverse geocoding both succeed, the IP step is marked `skipped` (with a reason) rather than attempted — `useLocationResolver.ts` (the hook `LocationInfo.tsx` consumes) and `LocationSteps.tsx` (the step-list UI, with `aria-live="polite"` for screen readers) both just render whatever `resolveLocation` reports.
+- **"Stop at first success."** The moment browser geolocation + reverse geocoding both succeed, the IP step is marked `skipped` (with a reason) rather than attempted — `useLocationResolver.ts` (the hook `LocationInfo.tsx` consumes) and `LocationGraph.tsx` both just render whatever `resolveLocation` reports.
 - **IP-result disclaimer.** When `source === "ip"`, `LocationInfo.tsx` shows an inline note that the location is approximate, per the "don't treat IP location as exact" requirement.
+- **`LocationMap.tsx`** shows the resolved coordinates (from either path) on a free, no-API-key OpenStreetMap embed — a plain `<iframe>` pointed at `openstreetmap.org/export/embed.html` with a marker and a small bbox around the point, plus a "View larger map" link out to the full site.
+
+### Graph view (`LocationGraph.tsx`)
+
+Instead of a flat status list, the chain renders as a node/edge graph — Start → Browser Geolocation → Reverse Geocode → IP Geolocation Fallback → Result — with `aria-live="polite"` so status changes are still announced to screen readers. The Browser Geolocation node shows all of its possible outgoing edges, dimming the ones not taken this run and highlighting the one that was, so the graph reads as a map of possibilities rather than a log of one run. Real-world scenarios map onto it as:
+
+| # | Scenario | How it shows up in the graph |
+|---|----------|-------------------------------|
+| 1 | OS location ON + browser permission ALLOWED | "Location ON + permission ALLOWED" edge → Reverse Geocode |
+| 2 | OS location ON, browser permission DENIED | `GeolocationPositionError.code === 1` → "Permission denied…" edge → IP Geolocation |
+| 3 | Browser permission ALLOWED, OS location OFF | `code === 2` → "Position unavailable / OS location off" edge → IP Geolocation |
+| 4 | Both OS location OFF and permission DENIED | Not distinguishable from #2 client-side — most browsers report code `1` for both, so the graph is honest about it: the edge is labeled "Permission denied (or OS location off, browser-dependent)" rather than claiming false precision |
+| 5 | Location resolved from the ISP | Reaching the IP Geolocation Fallback node at all |
+| 6 | Mobile ISP location can be inaccurate | Static caveat note on the IP Geolocation node (not detected — always shown) |
+| 7 | VPN skewing IP location | Static caveat note on the IP Geolocation node (not detected — always shown) |
+
+### Responsive layout
+
+The page (`App.tsx`) and card (`LocationInfo.tsx`) use full-width layouts with breakpoint-scaled padding (`px-4` → `sm:px-6` → `lg:px-10`) instead of a fixed narrow column, so the tree has room to breathe on wide screens. The result `<dl>` scales `grid-cols-1` → `sm:grid-cols-2` → `lg:grid-cols-3`, and the embedded map scales `h-48` → `sm:h-64` → `lg:h-80`. The detection tree itself is inherently wide (it's a horizontal diagram, not a paragraph that can reflow), so on viewports narrower than its content it stays in `overflow-x-auto` rather than clipping — that's the intentional small-screen fallback, not a bug.
+
+**Testing trade-off**: `src/responsive.test.tsx` asserts the responsive Tailwind classes are present on the right elements (a regression guard, e.g. against a `max-w` cap creeping back in) — but it runs on Vitest/jsdom, a single DOM implementation with no real CSS layout engine, so it can't render at actual viewport sizes or catch engine-specific rendering differences across Chrome/Firefox/Safari. Real cross-browser/viewport verification would need a tool like Playwright (browser binaries + a slower CI step) — not currently set up.
 
 ## Design notes
 
@@ -99,7 +121,7 @@ Going frontend-only for the IP fallback means `ipapi.co` is called directly from
 ## Testing
 
 - `src/services/location/*.test.ts` unit-test each strategy in isolation (`browserGeolocation`, `reverseGeocode`, `ipGeolocation`) and `resolveLocation.test.ts` covers every branch of the fallback chain: full browser success (IP skipped), browser success + geocode failure → IP fallback, browser failure → IP fallback, and total failure (`LocationResolutionError` with the full step trail attached).
-- `src/components/LocationSteps.test.tsx` checks the step list renders each status/detail correctly.
+- `src/components/LocationGraph.test.tsx` checks each node/edge renders the right status and that the correct edge is highlighted for full success, permission-denied, and position-unavailable scenarios.
 - `src/components/LocationInfo.test.tsx` is an integration test: `navigator.geolocation` and `fetch` are stubbed per-test on `globalThis` (with `fetch` routed by URL to simulate BigDataCloud vs. ipapi.co) to exercise the full button-click → chain → result-card flow for each outcome.
 - `src/App.test.tsx` is a smoke test confirming the heading and button render.
 
