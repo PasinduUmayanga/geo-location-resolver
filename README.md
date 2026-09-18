@@ -71,6 +71,10 @@ src/
     LocationMap.tsx                # embedded OpenStreetMap view of the result
   App.test.tsx                     # smoke test for App
   test/setup.ts                    # jest-dom matchers for Vitest
+docs/
+  ARCHITECTURE.md                  # deep-dive: patterns, decision log, testing/CI strategy
+CLAUDE.md                          # short, auto-loaded agent context (Claude Code)
+AGENTS.md                          # pointer to CLAUDE.md, for other agent tools
 appveyor.yml                       # CI: typecheck -> test -> build -> outdated/audit report
 ```
 
@@ -96,6 +100,109 @@ Browser Geolocation ──success──▶ Reverse Geocode ──success──�
 - **"Stop at first success."** The moment browser geolocation + reverse geocoding both succeed, the IP step is marked `skipped` (with a reason) rather than attempted — `useLocationResolver.ts` (the hook `LocationInfo.tsx` consumes) and `LocationGraph.tsx` both just render whatever `resolveLocation` reports.
 - **IP-result disclaimer.** When `source === "ip"`, `LocationInfo.tsx` shows an inline note that the location is approximate, per the "don't treat IP location as exact" requirement.
 - **`LocationMap.tsx`** shows the resolved coordinates (from either path) on a free, no-API-key OpenStreetMap embed — a plain `<iframe>` pointed at `openstreetmap.org/export/embed.html` with a marker and a small bbox around the point, plus a "View larger map" link out to the full site.
+
+## Code samples
+
+A few of the patterns used here are worth understanding on their own, since they're reused elsewhere in the app (or are good defaults for similar problems). For the full walkthrough and the reasoning behind each one, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md); this is the short version.
+
+### Typed errors instead of plain `Error` — `browserGeolocation.ts`
+
+```ts
+export class GeolocationError extends Error {
+  constructor(message: string, public readonly reason: BrowserFailureReason) {
+    super(message);
+    this.name = "GeolocationError";
+  }
+}
+```
+
+**What it's for**: `navigator.geolocation.getCurrentPosition`'s error callback only gives you a numeric `code`. Wrapping it in a custom `Error` subclass with a typed `reason` field means callers (`resolveLocation.ts`) can branch on *which kind* of failure happened (`error instanceof GeolocationError ? error.reason : "unknown"`) without string-matching the message. **Use this pattern** any time a caller needs to distinguish failure kinds programmatically, not just display a message.
+
+### Promise-wrapping a callback API — `browserGeolocation.ts`
+
+```ts
+export function getBrowserCoordinates(): Promise<BrowserCoordinates> {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => resolve({ latitude: position.coords.latitude, /* ... */ }),
+      (geoError) => reject(new GeolocationError(/* ... */))
+    );
+  });
+}
+```
+
+**What it's for**: `getCurrentPosition` predates Promises and takes success/error callbacks. Wrapping it once, here, means every caller downstream can just `await getBrowserCoordinates()` — no callback pyramids, and it composes with `try/catch` and `async/await` everywhere else in the chain.
+
+### An async orchestrator that reports progress via callback — `resolveLocation.ts`
+
+```ts
+export async function resolveLocation(onStepChange?: StepChangeListener): Promise<NormalizedLocation> {
+  const steps = INITIAL_LOCATION_STEPS.map((step) => ({ ...step }));
+  const setStep = (id: StepId, status: StepStatus, detail?: string) => {
+    steps.find((s) => s.id === id)!.status = status;
+    onStepChange?.(steps.map((s) => ({ ...s }))); // fresh copy on every transition
+  };
+
+  setStep("browser-geolocation", "trying");
+  try {
+    const coords = await getBrowserCoordinates();
+    setStep("browser-geolocation", "success");
+    // ...continue the chain, or fall through to the next strategy on failure
+  } catch {
+    setStep("browser-geolocation", "failed");
+    // fall through to IP geolocation
+  }
+}
+```
+
+**What it's for**: a multi-step async process where a UI needs to show live progress, not just a final result. `onStepChange` is a plain callback — the orchestrator has zero React/DOM knowledge, which keeps it independently testable (`resolveLocation.test.ts` calls it directly with mocked strategies) and reusable outside React if needed.
+
+**When to use it**: any "try A, then B, then C" flow with more than one async step where the caller cares about intermediate state, not just the outcome.
+
+### Wiring that callback into React state — `useLocationResolver.ts`
+
+```ts
+export function useLocationResolver() {
+  const [status, setStatus] = useState<ResolverStatus>("idle");
+  const [steps, setSteps] = useState<LocationStep[]>(INITIAL_LOCATION_STEPS);
+
+  const run = useCallback(async () => {
+    setStatus("running");
+    try {
+      const location = await resolveLocation(setSteps); // setSteps IS the callback
+      setStatus("success");
+    } catch (err) {
+      setStatus("error");
+    }
+  }, []);
+
+  return { status, steps, /* ... */ run };
+}
+```
+
+**What it's for**: `setSteps` (a `useState` setter) is passed straight in as the orchestrator's `onStepChange` callback — every `setStep()` call inside `resolveLocation` becomes a React re-render. This is the seam between framework-agnostic logic and the UI; nothing else in the app imports `resolveLocation` directly.
+
+### Responsive layout with zero JavaScript — `LocationGraph.tsx`
+
+```tsx
+<div data-testid="detection-tree-mobile" className="mt-4 space-y-2 xl:hidden">
+  {/* vertical stepper */}
+</div>
+<div data-testid="detection-tree" className="hidden overflow-x-auto xl:mt-4 xl:block">
+  {/* horizontal branching tree */}
+</div>
+```
+
+**What it's for**: showing the same data as two different layouts depending on viewport width, without `window.matchMedia`, resize listeners, or any client-side layout state — both trees are always in the DOM, and Tailwind's `xl:hidden` / `hidden xl:block` classes let the browser's own CSS media queries decide which one is visible. **When to use this over a JS media-query hook**: whenever the two layouts can both be rendered cheaply (no expensive computation or network calls unique to one variant) — it's simpler, has no hydration/flash-of-wrong-layout risk, and needs no `useEffect`.
+
+### Zero-dependency map embed — `LocationMap.tsx`
+
+```tsx
+const embedSrc = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&marker=${marker}`;
+<iframe title="Map showing the resolved location" src={embedSrc} loading="lazy" />
+```
+
+**What it's for**: showing a single point on a map without a mapping library (Leaflet, Mapbox, Google Maps JS) or an API key — OpenStreetMap's public embed endpoint is free and keyless. **When this stops being enough**: if you need pan/zoom control from your own UI, multiple markers, or custom marker styling — at that point swap this one component for a real map library; nothing else depends on how the map is rendered.
 
 ### Graph view (`LocationGraph.tsx`)
 
@@ -133,3 +240,9 @@ Going frontend-only for the IP fallback means `ipapi.co` is called directly from
 ## Continuous integration
 
 `appveyor.yml` runs on every push/PR: it installs dependencies with `npm ci` (caching `node_modules` keyed on `package-lock.json`), then runs `npm run typecheck`, `npm test`, and `npm run build` in sequence — a broken type, a failing test, or a broken production build all fail the CI run. It then reports outdated packages (`npm outdated`, non-blocking) and audits for known vulnerabilities (`npm audit`, printing every severity but only failing the build on a critical-severity finding).
+
+## Further documentation
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the deep-dive: full module responsibilities, every pattern above with more detail, a chronological decision log (the *why* behind non-obvious choices), the testing strategy, and CI/CD.
+- [`CLAUDE.md`](CLAUDE.md) — short AI-agent context, auto-loaded by Claude Code at the start of every session in this repo.
+- [`AGENTS.md`](AGENTS.md) — pointer to `CLAUDE.md`, for other agent tools that look for that filename.
