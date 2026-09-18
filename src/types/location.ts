@@ -2,11 +2,19 @@ export type StepId = "browser-geolocation" | "reverse-geocode" | "ip-geolocation
 
 export type StepStatus = "idle" | "trying" | "success" | "failed" | "skipped";
 
+export type BrowserFailureReason =
+  | "permission-denied"
+  | "position-unavailable"
+  | "timeout"
+  | "unsupported"
+  | "unknown";
+
 export interface LocationStep {
   id: StepId;
   label: string;
   status: StepStatus;
   detail?: string;
+  reason?: BrowserFailureReason;
 }
 
 export type LocationSource = "browser" | "ip";

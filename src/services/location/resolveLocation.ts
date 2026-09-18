@@ -1,6 +1,12 @@
 import { INITIAL_LOCATION_STEPS } from "../../types/location.ts";
-import type { LocationStep, NormalizedLocation, StepId, StepStatus } from "../../types/location.ts";
-import { getBrowserCoordinates } from "./browserGeolocation.ts";
+import type {
+  BrowserFailureReason,
+  LocationStep,
+  NormalizedLocation,
+  StepId,
+  StepStatus,
+} from "../../types/location.ts";
+import { GeolocationError, getBrowserCoordinates } from "./browserGeolocation.ts";
 import { reverseGeocode } from "./reverseGeocode.ts";
 import { getIpGeolocation } from "./ipGeolocation.ts";
 import { collectHints } from "./hints.ts";
@@ -26,10 +32,16 @@ export async function resolveLocation(
 ): Promise<NormalizedLocation> {
   const steps = INITIAL_LOCATION_STEPS.map((step) => ({ ...step }));
 
-  const setStep = (id: StepId, status: StepStatus, detail?: string) => {
+  const setStep = (
+    id: StepId,
+    status: StepStatus,
+    detail?: string,
+    reason?: BrowserFailureReason
+  ) => {
     const step = steps.find((s) => s.id === id)!;
     step.status = status;
     step.detail = detail;
+    step.reason = reason;
     onStepChange?.(steps.map((s) => ({ ...s })));
   };
 
@@ -64,7 +76,8 @@ export async function resolveLocation(
       setStep("reverse-geocode", "failed", messageOf(error));
     }
   } catch (error) {
-    setStep("browser-geolocation", "failed", messageOf(error));
+    const reason = error instanceof GeolocationError ? error.reason : "unknown";
+    setStep("browser-geolocation", "failed", messageOf(error), reason);
     setStep("reverse-geocode", "skipped", "no coordinates to geocode");
   }
 

@@ -99,7 +99,8 @@ describe("LocationInfo", () => {
       expect(screen.getByText("San Francisco")).toBeInTheDocument()
     );
     expect(screen.getByText("browser")).toBeInTheDocument();
-    expect(screen.getAllByText("Success")).toHaveLength(2);
+    // Start, Browser Geolocation, Reverse Geocode, and the final Result node all show "Success".
+    expect(screen.getAllByText("Success")).toHaveLength(4);
     expect(screen.getByText("Skipped")).toBeInTheDocument();
     expect(
       screen.queryByText(/approximate location/i)

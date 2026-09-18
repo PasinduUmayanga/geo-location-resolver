@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import {
+  GeolocationError,
   getBrowserCoordinates,
   isGeolocationSupported,
 } from "./browserGeolocation.ts";
@@ -54,12 +55,46 @@ describe("browserGeolocation", () => {
     });
   });
 
-  it("rejects with a permission-denied message for error code 1", async () => {
+  it("rejects with a permission-denied message and reason for error code 1", async () => {
     mockGeolocation({ success: false, errorCode: 1 });
-    await expect(getBrowserCoordinates()).rejects.toThrow(/denied/i);
+    try {
+      await getBrowserCoordinates();
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(GeolocationError);
+      expect((error as Error).message).toMatch(/denied/i);
+      expect((error as GeolocationError).reason).toBe("permission-denied");
+    }
   });
 
-  it("rejects when geolocation is unsupported", async () => {
-    await expect(getBrowserCoordinates()).rejects.toThrow(/not supported/i);
+  it("reports position-unavailable for error code 2", async () => {
+    mockGeolocation({ success: false, errorCode: 2 });
+    try {
+      await getBrowserCoordinates();
+      expect.unreachable();
+    } catch (error) {
+      expect((error as GeolocationError).reason).toBe("position-unavailable");
+    }
+  });
+
+  it("reports timeout for error code 3", async () => {
+    mockGeolocation({ success: false, errorCode: 3 });
+    try {
+      await getBrowserCoordinates();
+      expect.unreachable();
+    } catch (error) {
+      expect((error as GeolocationError).reason).toBe("timeout");
+    }
+  });
+
+  it("rejects with an unsupported reason when geolocation is unsupported", async () => {
+    try {
+      await getBrowserCoordinates();
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(GeolocationError);
+      expect((error as GeolocationError).reason).toBe("unsupported");
+      expect((error as GeolocationError).message).toMatch(/not supported/i);
+    }
   });
 });

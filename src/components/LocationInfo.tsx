@@ -1,5 +1,5 @@
 import { useLocationResolver } from "../hooks/useLocationResolver.ts";
-import LocationSteps from "./LocationSteps.tsx";
+import LocationGraph from "./LocationGraph.tsx";
 
 export default function LocationInfo() {
   const { status, steps, result, error, run } = useLocationResolver();
@@ -16,7 +16,9 @@ export default function LocationInfo() {
         {isRunning ? "Locating…" : "Get Location"}
       </button>
 
-      {status !== "idle" && <LocationSteps steps={steps} />}
+      {status !== "idle" && (
+        <LocationGraph status={status} steps={steps} result={result} />
+      )}
 
       {status === "error" && error && (
         <p className="mt-4 text-sm text-red-600">{error}</p>
