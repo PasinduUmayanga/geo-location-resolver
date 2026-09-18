@@ -1,0 +1,24 @@
+version: 1.0.{build}
+
+image: Ubuntu2204
+
+environment:
+  nodejs_version: "22"
+
+cache:
+  - node_modules -> package-lock.json
+  - $HOME/.npm -> package-lock.json
+
+install:
+  - node --version
+  - npm --version
+  - npm ci
+
+build: off
+
+test_script:
+  - npm run typecheck
+  - npm test
+  - npm run build
+  - npm outdated || true
+  - npm audit --audit-level=critical
