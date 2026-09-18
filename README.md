@@ -63,8 +63,9 @@ src/
   hooks/
     useLocationResolver.ts         # React hook wrapping resolveLocation for LocationInfo
   components/
-    LocationInfo.tsx               # button + graph view + result card
+    LocationInfo.tsx               # button + graph view + result card + map
     LocationGraph.tsx              # node/edge graph view of the fallback chain
+    LocationMap.tsx                # embedded OpenStreetMap view of the result
   App.test.tsx                     # smoke test for App
   test/setup.ts                    # jest-dom matchers for Vitest
 appveyor.yml                       # CI: typecheck -> test -> build -> outdated/audit report
@@ -91,6 +92,7 @@ Browser Geolocation ──success──▶ Reverse Geocode ──success──�
 - **`hints.ts`** collects timezone (`Intl.DateTimeFormat().resolvedOptions().timeZone`) and locale (`navigator.language`) once, merged into whichever result wins — these never gate the chain or get a step of their own, since they're supporting metadata, not a location source.
 - **"Stop at first success."** The moment browser geolocation + reverse geocoding both succeed, the IP step is marked `skipped` (with a reason) rather than attempted — `useLocationResolver.ts` (the hook `LocationInfo.tsx` consumes) and `LocationGraph.tsx` both just render whatever `resolveLocation` reports.
 - **IP-result disclaimer.** When `source === "ip"`, `LocationInfo.tsx` shows an inline note that the location is approximate, per the "don't treat IP location as exact" requirement.
+- **`LocationMap.tsx`** shows the resolved coordinates (from either path) on a free, no-API-key OpenStreetMap embed — a plain `<iframe>` pointed at `openstreetmap.org/export/embed.html` with a marker and a small bbox around the point, plus a "View larger map" link out to the full site.
 
 ### Graph view (`LocationGraph.tsx`)
 
@@ -105,6 +107,12 @@ Instead of a flat status list, the chain renders as a node/edge graph — Start 
 | 5 | Location resolved from the ISP | Reaching the IP Geolocation Fallback node at all |
 | 6 | Mobile ISP location can be inaccurate | Static caveat note on the IP Geolocation node (not detected — always shown) |
 | 7 | VPN skewing IP location | Static caveat note on the IP Geolocation node (not detected — always shown) |
+
+### Responsive layout
+
+The page (`App.tsx`) and card (`LocationInfo.tsx`) use full-width layouts with breakpoint-scaled padding (`px-4` → `sm:px-6` → `lg:px-10`) instead of a fixed narrow column, so the tree has room to breathe on wide screens. The result `<dl>` scales `grid-cols-1` → `sm:grid-cols-2` → `lg:grid-cols-3`, and the embedded map scales `h-48` → `sm:h-64` → `lg:h-80`. The detection tree itself is inherently wide (it's a horizontal diagram, not a paragraph that can reflow), so on viewports narrower than its content it stays in `overflow-x-auto` rather than clipping — that's the intentional small-screen fallback, not a bug.
+
+**Testing trade-off**: `src/responsive.test.tsx` asserts the responsive Tailwind classes are present on the right elements (a regression guard, e.g. against a `max-w` cap creeping back in) — but it runs on Vitest/jsdom, a single DOM implementation with no real CSS layout engine, so it can't render at actual viewport sizes or catch engine-specific rendering differences across Chrome/Firefox/Safari. Real cross-browser/viewport verification would need a tool like Playwright (browser binaries + a slower CI step) — not currently set up.
 
 ## Design notes
 

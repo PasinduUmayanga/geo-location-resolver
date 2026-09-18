@@ -105,6 +105,9 @@ describe("LocationInfo", () => {
     expect(
       screen.queryByText(/approximate location/i)
     ).not.toBeInTheDocument();
+    expect(
+      screen.getByTitle("Map showing the resolved location")
+    ).toBeInTheDocument();
   });
 
   it("falls back to IP geolocation when the browser permission is denied", async () => {
@@ -121,6 +124,9 @@ describe("LocationInfo", () => {
     expect(screen.getByText("ip")).toBeInTheDocument();
     expect(screen.getByText(/approximate location/i)).toBeInTheDocument();
     expect(screen.getByText("Example ISP")).toBeInTheDocument();
+    expect(
+      screen.getByTitle("Map showing the resolved location")
+    ).toBeInTheDocument();
   });
 
   it("shows a failure message when every method fails", async () => {

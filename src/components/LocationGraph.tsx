@@ -31,25 +31,24 @@ const NODE_STATUS_LABEL: Record<NodeStatus, string> = {
   skipped: "Skipped",
 };
 
+const EDGE_TEXT_CLASSES: Record<NodeStatus, string> = {
+  pending: "text-slate-300",
+  active: "font-medium text-blue-600",
+  success: "font-medium text-green-700",
+  failed: "font-medium text-red-700",
+  skipped: "text-slate-300",
+};
+
 type BrowserEdgeKey = "success" | "permission-denied" | "position-unavailable" | "other";
 
-const BROWSER_EDGES: Array<{ key: BrowserEdgeKey; label: string; to: string }> = [
-  { key: "success", label: "Location ON + permission ALLOWED", to: "Reverse Geocode" },
+const BROWSER_EDGES: Array<{ key: BrowserEdgeKey; label: string }> = [
+  { key: "success", label: "Location ON + permission ALLOWED" },
   {
     key: "permission-denied",
     label: "Permission denied (or OS location off, browser-dependent)",
-    to: "IP Geolocation Fallback",
   },
-  {
-    key: "position-unavailable",
-    label: "Position unavailable / OS location off",
-    to: "IP Geolocation Fallback",
-  },
-  {
-    key: "other",
-    label: "Timeout / unsupported / other",
-    to: "IP Geolocation Fallback",
-  },
+  { key: "position-unavailable", label: "Position unavailable / OS location off" },
+  { key: "other", label: "Timeout / unsupported / other" },
 ];
 
 function reasonToEdgeKey(reason: BrowserFailureReason | undefined): BrowserEdgeKey {
@@ -87,9 +86,9 @@ interface GraphNodeProps {
 function GraphNode({ title, status, detail, children }: GraphNodeProps) {
   return (
     <div
-      className={`rounded-lg border px-3 py-2 text-sm ${NODE_BORDER_CLASSES[status]}`}
+      className={`w-52 shrink-0 rounded-lg border bg-white px-3 py-2 text-sm transition-colors duration-300 ${NODE_BORDER_CLASSES[status]} ${status === "active" ? "animate-pulse" : ""}`}
     >
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-1">
         <span className="font-medium text-slate-700">{title}</span>
         <span
           className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${NODE_BADGE_CLASSES[status]}`}
@@ -103,11 +102,14 @@ function GraphNode({ title, status, detail, children }: GraphNodeProps) {
   );
 }
 
-function Connector() {
+function Arrow() {
   return (
-    <div className="flex justify-center text-slate-300" aria-hidden="true">
-      ↓
-    </div>
+    <span
+      aria-hidden="true"
+      className="flex shrink-0 items-center text-lg leading-none text-slate-300"
+    >
+      →
+    </span>
   );
 }
 
@@ -121,6 +123,10 @@ export default function LocationGraph({ status, steps, result }: LocationGraphPr
   const browserStep = findStep(steps, "browser-geolocation");
   const reverseStep = findStep(steps, "reverse-geocode");
   const ipStep = findStep(steps, "ip-geolocation");
+
+  const browserStatus = toNodeStatus(browserStep?.status);
+  const reverseStatus = toNodeStatus(reverseStep?.status);
+  const ipStatus = toNodeStatus(ipStep?.status);
 
   const takenEdgeKey: BrowserEdgeKey | null =
     browserStep?.status === "success"
@@ -142,55 +148,80 @@ export default function LocationGraph({ status, steps, result }: LocationGraphPr
         ? { title: "Result: All methods failed", status: "failed" }
         : { title: "Result", status: "pending" };
 
+  const failureEdges = BROWSER_EDGES.filter((edge) => edge.key !== "success");
+  const successEdge = BROWSER_EDGES[0];
+
   return (
-    <div aria-live="polite" className="mt-4 space-y-1">
-      <GraphNode title="Start" status="success" />
-      <Connector />
-
-      <GraphNode
-        title="Browser Geolocation"
-        status={toNodeStatus(browserStep?.status)}
-        detail={browserStep?.detail}
-      />
-
-      <ol className="my-2 ml-4 space-y-1 border-l border-slate-200 pl-3">
-        {BROWSER_EDGES.map((edge) => {
-          const isTaken = takenEdgeKey === edge.key;
-          return (
-            <li
-              key={edge.key}
-              className={`text-xs ${
-                isTaken
-                  ? "font-medium text-slate-700"
-                  : "text-slate-300"
-              }`}
-            >
-              {isTaken ? "▶" : "┄"} {edge.label} → {edge.to}
-            </li>
-          );
-        })}
-      </ol>
-
-      <GraphNode
-        title="Reverse Geocode"
-        status={toNodeStatus(reverseStep?.status)}
-        detail={reverseStep?.detail}
-      />
-      <Connector />
-
-      <GraphNode
-        title="IP Geolocation Fallback"
-        status={toNodeStatus(ipStep?.status)}
-        detail={ipStep?.detail}
+    <div
+      aria-live="polite"
+      data-testid="detection-tree"
+      className="mt-4 overflow-x-auto"
+    >
+      <div
+        data-testid="detection-tree-row"
+        className="flex min-w-[1000px] items-stretch gap-3 pb-2"
       >
-        <ul className="mt-2 space-y-0.5 text-xs text-amber-600">
-          <li>⚠ Mobile ISP location can be especially inaccurate.</li>
-          <li>⚠ VPNs/proxies can skew IP-based location.</li>
-        </ul>
-      </GraphNode>
-      <Connector />
+        <div className="flex items-center">
+          <GraphNode title="Start" status="success" />
+        </div>
+        <Arrow />
+        <div className="flex items-center">
+          <GraphNode
+            title="Browser Geolocation"
+            status={browserStatus}
+            detail={browserStep?.detail}
+          />
+        </div>
+        <Arrow />
 
-      <GraphNode title={resultNode.title} status={resultNode.status} />
+        <div className="flex flex-col justify-center gap-2">
+          <div className="flex items-center gap-2">
+            <span className={`w-72 text-xs ${EDGE_TEXT_CLASSES[takenEdgeKey === successEdge.key ? reverseStatus : "pending"]}`}>
+              {takenEdgeKey === successEdge.key ? "▶" : "┄"} {successEdge.label}
+            </span>
+            <Arrow />
+            <GraphNode
+              title="Reverse Geocode"
+              status={reverseStatus}
+              detail={reverseStep?.detail}
+            />
+          </div>
+
+          <ol className="ml-1 space-y-1 border-l-2 border-slate-200 pl-2">
+            {failureEdges.map((edge) => {
+              const isTaken = takenEdgeKey === edge.key;
+              return (
+                <li
+                  key={edge.key}
+                  className={`w-72 text-xs ${EDGE_TEXT_CLASSES[isTaken ? ipStatus : "pending"]}`}
+                >
+                  {isTaken ? "▶" : "┄"} {edge.label}
+                </li>
+              );
+            })}
+          </ol>
+
+          <div className="flex items-center gap-2">
+            <span
+              className={`w-72 text-xs ${EDGE_TEXT_CLASSES[reverseStep?.status === "failed" ? ipStatus : "pending"]}`}
+            >
+              {reverseStep?.status === "failed" ? "▶" : "┄"} Reverse Geocode failed
+            </span>
+            <Arrow />
+            <GraphNode title="IP Geolocation Fallback" status={ipStatus} detail={ipStep?.detail}>
+              <ul className="mt-2 space-y-0.5 text-xs text-amber-600">
+                <li>⚠ Mobile ISP location can be especially inaccurate.</li>
+                <li>⚠ VPNs/proxies can skew IP-based location.</li>
+              </ul>
+            </GraphNode>
+          </div>
+        </div>
+
+        <Arrow />
+        <div className="flex items-center">
+          <GraphNode title={resultNode.title} status={resultNode.status} />
+        </div>
+      </div>
     </div>
   );
 }
