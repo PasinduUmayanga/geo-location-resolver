@@ -7,7 +7,13 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Vitest](https://img.shields.io/badge/tested_with-Vitest-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
 
-A small React + TypeScript app that resolves a visitor's country, region, and city entirely client-side: it reads the browser's [Geolocation API](https://developer.mozilla.org/en-US/docs/Web/API/Geolocation_API) for coordinates, then reverse-geocodes them via the free [BigDataCloud](https://www.bigdatacloud.com/) API. There is no backend — everything runs in the browser.
+A React + TypeScript app that resolves a visitor's country, region, and city entirely client-side, with a layered fallback chain so it still returns a result when the browser can't give one:
+
+1. **Browser Geolocation API** (`navigator.geolocation`) for precise coordinates, reverse-geocoded via the free [BigDataCloud](https://www.bigdatacloud.com/) API to get country/region/city.
+2. **IP-based geolocation fallback** (via [ipapi.co](https://ipapi.co/)) when geolocation is denied, unavailable, or the reverse-geocode step fails — approximate, and called out as such in the UI (VPNs/proxies/CGNAT can skew it).
+3. **Weak supporting hints** (timezone, locale) collected alongside either path — informational only, never used to gate or replace the result.
+
+There is no backend — every step runs in the browser (see [Design notes](#design-notes) for the trade-off).
 
 ## Tech stack
 
@@ -42,39 +48,60 @@ Open the printed local URL and click **Get Location** — your browser will prom
 
 ```
 src/
-  App.tsx                      # page shell, renders LocationInfo
-  main.tsx                     # React root / entry point
-  index.css                    # Tailwind import
-  vite-env.d.ts                # ambient types for Vite asset imports
+  App.tsx                          # page shell, renders LocationInfo
+  main.tsx                         # React root / entry point
+  index.css                        # Tailwind import
+  vite-env.d.ts                    # ambient types for Vite asset imports
+  types/
+    location.ts                    # LocationStep, NormalizedLocation, LocationSource — shared contract
+  services/location/
+    browserGeolocation.ts          # navigator.geolocation wrapped as a Promise
+    reverseGeocode.ts              # BigDataCloud coords -> address
+    ipGeolocation.ts               # ipapi.co IP-based fallback
+    hints.ts                       # timezone/locale collection
+    resolveLocation.ts             # orchestrator: runs the fallback chain, tracks step status
+  hooks/
+    useLocationResolver.ts         # React hook wrapping resolveLocation for LocationInfo
   components/
-    LocationInfo.tsx           # geolocation + reverse-geocode UI
-    LocationInfo.test.tsx      # component tests
-  App.test.tsx                 # smoke test for App
-  test/setup.ts                # jest-dom matchers for Vitest
-appveyor.yml                   # CI: typecheck -> test -> build
+    LocationInfo.tsx               # button + step tracker + result card
+    LocationSteps.tsx              # renders the ordered step list with status badges
+  App.test.tsx                     # smoke test for App
+  test/setup.ts                    # jest-dom matchers for Vitest
+appveyor.yml                       # CI: typecheck -> test -> build -> outdated/audit report
 ```
 
 ## How it works
 
-The core logic lives in `src/components/LocationInfo.tsx`.
+The fallback chain is orchestrated by `resolveLocation()` in `src/services/location/resolveLocation.ts`. Each detection method is a small, independently testable strategy module; the orchestrator runs them in priority order and tracks each as its own `idle → trying → (success | failed | skipped)` step, calling an `onStepChange` callback after every transition so the UI can render live progress instead of just a final result.
 
-- **State machine.** `status` is one of `"idle" | "loading" | "success" | "error"`, alongside `location` (the resolved data) and `error` (a human-readable message). This single piece of state drives the button label/disabled state and which result block renders, instead of juggling multiple booleans.
-- **Feature detection.** `isSupported` checks `!!navigator.geolocation` up front, so browsers without geolocation support get an inline message and a disabled button rather than a silent failure when the button is clicked.
-- **Two-callback geolocation API.** `navigator.geolocation.getCurrentPosition` takes a success callback and an error callback. The error callback is wired up and `GEOLOCATION_ERROR_MESSAGES` maps the standard [`GeolocationPositionError.code`](https://developer.mozilla.org/en-US/docs/Web/API/GeolocationPositionError/code) values (`1` permission denied, `2` position unavailable, `3` timeout) to readable messages, so a user who denies the permission prompt sees why nothing happened instead of the app hanging.
-- **Reverse geocoding.** On success, the coordinates are sent to BigDataCloud's `reverse-geocode-client` endpoint. The fetch is wrapped in `try/catch` and checks `response.ok` before parsing JSON, so a network error or non-2xx response surfaces as an error state rather than throwing inside a promise no one awaits. `city: data.city || data.locality` falls back to `locality` because BigDataCloud omits `city` for some rural/unincorporated coordinates.
+```
+Browser Geolocation ──success──▶ Reverse Geocode ──success──▶ done (source: "browser")
+      │failed                          │failed
+      ▼                                ▼
+  [Reverse Geocode: skipped]      IP Geolocation Fallback ──success──▶ done (source: "ip")
+      │                                │failed
+      └────────────▶ IP Geolocation ◀──┘
+                          │
+                     all failed ▶ throws LocationResolutionError
+```
+
+- **`browserGeolocation.ts`** wraps `navigator.geolocation.getCurrentPosition` as a Promise and maps [`GeolocationPositionError.code`](https://developer.mozilla.org/en-US/docs/Web/API/GeolocationPositionError/code) (`1` permission denied, `2` position unavailable, `3` timeout) to readable messages.
+- **`reverseGeocode.ts`** sends browser coordinates to BigDataCloud's `reverse-geocode-client` endpoint (`city: data.city || data.locality`, since BigDataCloud omits `city` for some rural/unincorporated coordinates). If browser geolocation succeeds but this fails, the chain still falls through to IP geolocation — raw coordinates without a resolved address aren't treated as a full success.
+- **`ipGeolocation.ts`** calls `ipapi.co`, which detects the caller's IP from the request itself — no backend needed. It also handles ipapi.co's quirk of returning HTTP 200 with `{ error: true }` when rate-limited, rather than a non-2xx status.
+- **`hints.ts`** collects timezone (`Intl.DateTimeFormat().resolvedOptions().timeZone`) and locale (`navigator.language`) once, merged into whichever result wins — these never gate the chain or get a step of their own, since they're supporting metadata, not a location source.
+- **"Stop at first success."** The moment browser geolocation + reverse geocoding both succeed, the IP step is marked `skipped` (with a reason) rather than attempted — `useLocationResolver.ts` (the hook `LocationInfo.tsx` consumes) and `LocationSteps.tsx` (the step-list UI, with `aria-live="polite"` for screen readers) both just render whatever `resolveLocation` reports.
+- **IP-result disclaimer.** When `source === "ip"`, `LocationInfo.tsx` shows an inline note that the location is approximate, per the "don't treat IP location as exact" requirement.
+
+## Design notes
+
+Going frontend-only for the IP fallback means `ipapi.co` is called directly from the browser rather than through a backend proxy. Its free tier is unauthenticated (no key to manage) and HTTPS-safe to call from a browser page, but rate-limited (~1,000 req/day) and not centrally swappable. If that ever becomes a real constraint, only `ipGeolocation.ts` needs to change — the rest of the chain (`resolveLocation.ts`, the hook, the UI) is provider-agnostic.
 
 ## Testing
 
-`src/components/LocationInfo.test.tsx` covers:
-
-- initial render (button present, no result shown)
-- the unsupported-browser message when `navigator.geolocation` is absent
-- the loading state while the reverse-geocode request is in flight
-- a successful resolution, including the `city`/`locality` fallback
-- a permission-denied geolocation error
-- a failed reverse-geocode request (non-`ok` response)
-
-`navigator.geolocation` and `fetch` aren't available/deterministic in the jsdom test environment, so both are stubbed per-test on `globalThis` and reset in `afterEach`. `src/App.test.tsx` is a smoke test confirming the heading and button render.
+- `src/services/location/*.test.ts` unit-test each strategy in isolation (`browserGeolocation`, `reverseGeocode`, `ipGeolocation`) and `resolveLocation.test.ts` covers every branch of the fallback chain: full browser success (IP skipped), browser success + geocode failure → IP fallback, browser failure → IP fallback, and total failure (`LocationResolutionError` with the full step trail attached).
+- `src/components/LocationSteps.test.tsx` checks the step list renders each status/detail correctly.
+- `src/components/LocationInfo.test.tsx` is an integration test: `navigator.geolocation` and `fetch` are stubbed per-test on `globalThis` (with `fetch` routed by URL to simulate BigDataCloud vs. ipapi.co) to exercise the full button-click → chain → result-card flow for each outcome.
+- `src/App.test.tsx` is a smoke test confirming the heading and button render.
 
 ## Continuous integration
 
